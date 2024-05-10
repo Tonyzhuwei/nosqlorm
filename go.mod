@@ -1,9 +1,8 @@
-module nosqlorm
+module github.com/Tonyzhuwei/nosqlorm
 
 go 1.19
 
 require (
-	github.com/Tonyzhuwei/nosqlorm v0.0.0-20240507164914-376182cf4ad3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gocql/gocql v1.6.0 // indirect
 	github.com/golang/snappy v0.0.3 // indirect

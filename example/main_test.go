@@ -1,7 +1,7 @@
 package main
 
 import (
-	"nosqlorm"
+	"github.com/Tonyzhuwei/nosqlorm"
 	"testing"
 )
 

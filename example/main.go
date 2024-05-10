@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/Tonyzhuwei/nosqlorm"
 	"github.com/gocql/gocql"
-	"nosqlorm"
 )
 
 type Person struct {
