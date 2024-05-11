@@ -17,10 +17,10 @@ const JSON_TAG = "json"
 var modelCache sync.Map //TODO cache tables into the map
 
 type cassandraTableField struct {
-	filedName       string
 	isPartitionKey  bool
 	isClusteringKey bool
 	isStatic        bool
+	index           int
 	dataType        reflect.Kind
 	offSet          uintptr
 }
@@ -35,19 +35,24 @@ func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
 	var t T
 	typ := reflect.TypeOf(t)
 	typName := typ.String()
+
+	if typ.Kind() != reflect.Struct {
+		panic("Must be struct")
+	}
+
 	if _, existing := modelCache.Load(typName); !existing {
-		tableSchema := make([]cassandraTableField, 0)
+		tableSchema := make(map[string]cassandraTableField, 0)
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
 			tag := field.Tag
-			tableSchema = append(tableSchema, cassandraTableField{
-				filedName:       field.Name,
+			tableSchema[field.Name] = cassandraTableField{
 				isPartitionKey:  isPartitionKey(tag),
 				isClusteringKey: isClusterKey(tag),
 				isStatic:        isStaticFiled(tag),
+				index:           field.Index[0],
 				dataType:        field.Type.Kind(),
 				offSet:          field.Offset,
-			})
+			}
 		}
 		modelCache.Store(typName, tableSchema)
 	}
@@ -123,30 +128,30 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	tableName := strings.ToLower(typ.Name())
 
 	tableSchema, ok := modelCache.Load(typ.String())
-	tableFields := tableSchema.([]cassandraTableField)
+	tableFields := tableSchema.(map[string]cassandraTableField)
 	if !ok {
 		return []T{}, errors.New(fmt.Sprintf("Table %s not found", tableName))
 	}
 
-	fieldArray := make([]string, 0)
+	selectFields := make([]string, 0)
 	whereClause := make([]string, 0)
 	whereValues := make([]interface{}, 0)
 	// TODO: sort keys by order
 
-	for i, value := range tableFields {
-		filedName := tableFields[i].filedName
-		fieldArray = append(fieldArray, filedName)
+	for key, value := range tableFields {
+		fieldName := key
+		selectFields = append(selectFields, fieldName)
 		if value.isClusteringKey || value.isPartitionKey {
-			fieldVal := convertToValue(val.FieldByName(filedName))
+			fieldVal := convertToValue(val.FieldByName(fieldName))
 			if fieldVal == nil {
 				continue
 			}
-			whereClause = append(whereClause, fmt.Sprintf("%s=?", filedName))
+			whereClause = append(whereClause, fmt.Sprintf("%s=?", fieldName))
 			whereValues = append(whereValues, fieldVal)
 		}
 	}
 
-	sql := fmt.Sprintf("SELECT %s FROM %s WHERE %s;", strings.Join(fieldArray, ", "), tableName, strings.Join(whereClause, " AND "))
+	sql := fmt.Sprintf("SELECT %s FROM %s WHERE %s;", strings.Join(selectFields, ", "), tableName, strings.Join(whereClause, " AND "))
 	selectResult := make([]T, 0)
 	iter := ctx.sess.Query(sql, whereValues...).Iter()
 	defer func() {
@@ -157,7 +162,7 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	}()
 	for {
 		var tableObj T
-		if !iter.Scan(getPointsOfStructElements(unsafe.Pointer(&tableObj), tableFields)...) {
+		if !iter.Scan(getPointsOfStructElements(unsafe.Pointer(&tableObj), selectFields, tableFields)...) {
 			break
 		}
 		selectResult = append(selectResult, tableObj)
@@ -277,14 +282,15 @@ func isDateFiled(tag reflect.StructTag) bool {
 	return strings.Contains(tag.Get(CQL_TAG), "date")
 }
 
-func getPointsOfStructElements(basePoint unsafe.Pointer, fields []cassandraTableField) []interface{} {
+func getPointsOfStructElements(basePoint unsafe.Pointer, selectFields []string, fieldsMap map[string]cassandraTableField) []interface{} {
 	fieldsPtr := make([]interface{}, 0)
-	for _, val := range fields {
-		switch val.dataType {
+	for _, val := range selectFields {
+		field, _ := fieldsMap[val]
+		switch field.dataType {
 		case reflect.String:
-			fieldsPtr = append(fieldsPtr, (*string)(unsafe.Add(basePoint, val.offSet)))
+			fieldsPtr = append(fieldsPtr, (*string)(unsafe.Add(basePoint, field.offSet)))
 		case reflect.Int8:
-			fieldsPtr = append(fieldsPtr, (*int8)(unsafe.Add(basePoint, val.offSet)))
+			fieldsPtr = append(fieldsPtr, (*int8)(unsafe.Add(basePoint, field.offSet)))
 		default:
 			fieldsPtr = append(fieldsPtr, nil)
 		}
