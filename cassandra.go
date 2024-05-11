@@ -118,7 +118,7 @@ func (ctx *cqlOrm[T]) Insert(obj T) error {
 		fieldName := getFiledName(typ.Field(i).Tag)
 		fileds = append(fileds, fieldName)
 		filedPlaceHolders = append(filedPlaceHolders, "?")
-		fieldVal := convertToValue(val.Field(i))
+		fieldVal := convertToNormalValue(val.Field(i))
 		sqlValues = append(sqlValues, fieldVal)
 	}
 	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);", tableName, strings.Join(fileds, ","), strings.Join(filedPlaceHolders, ","))
@@ -148,7 +148,7 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 		fieldName := key
 		selectFields = append(selectFields, fieldName)
 		if value.isClusteringKey || value.isPartitionKey {
-			fieldVal := convertToValue(val.FieldByName(fieldName))
+			fieldVal := convertToNormalValue(val.FieldByName(fieldName))
 			if fieldVal == nil {
 				continue
 			}
@@ -190,7 +190,7 @@ func (ctx *cqlOrm[T]) Update(obj T) error {
 		fieldName := getFiledName(typ.Field(i).Tag)
 		cqlTag := typ.Field(i).Tag.Get(CQL_TAG)
 		if cqlTag != "" && (strings.Contains(cqlTag, "pk") || strings.Contains(cqlTag, "ck")) {
-			fieldVal := convertToValue(val.Field(i))
+			fieldVal := convertToNormalValue(val.Field(i))
 			if fieldVal == nil {
 				continue
 			}
@@ -198,7 +198,7 @@ func (ctx *cqlOrm[T]) Update(obj T) error {
 			whereValues = append(whereValues, fieldVal)
 		} else {
 			fileds = append(fileds, fieldName+"=?")
-			fieldVal := convertToValue(val.Field(i))
+			fieldVal := convertToNormalValue(val.Field(i))
 			sqlValues = append(sqlValues, fieldVal)
 		}
 	}
@@ -225,7 +225,7 @@ func (ctx *cqlOrm[T]) Delete(obj T) error {
 		fieldName := getFiledName(typ.Field(i).Tag)
 		cqlTag := typ.Field(i).Tag.Get(CQL_TAG)
 		if cqlTag != "" && (strings.Contains(cqlTag, "pk") || strings.Contains(cqlTag, "ck")) {
-			fieldVal := convertToValue(val.Field(i))
+			fieldVal := convertToNormalValue(val.Field(i))
 			if fieldVal == nil {
 				continue
 			}
@@ -293,13 +293,47 @@ func getPointsOfStructElements(basePoint unsafe.Pointer, selectFields []string, 
 	for _, val := range selectFields {
 		field, _ := fieldsMap[val]
 		switch field.dataType {
-		case reflect.String:
-			fieldsPtr = append(fieldsPtr, (*string)(unsafe.Add(basePoint, field.offSet)))
+		case reflect.Bool:
+			convertPtr[bool](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Int:
+			convertPtr[int](&fieldsPtr, basePoint, field.offSet)
 		case reflect.Int8:
-			fieldsPtr = append(fieldsPtr, (*int8)(unsafe.Add(basePoint, field.offSet)))
+			convertPtr[int8](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Int16:
+			convertPtr[int16](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Int32:
+			convertPtr[int32](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Int64:
+			convertPtr[int64](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Uint:
+			convertPtr[uint](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Uint8:
+			convertPtr[uint8](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Uint16:
+			convertPtr[uint16](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Uint32:
+			convertPtr[uint32](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Uint64:
+			convertPtr[uint64](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Uintptr:
+			convertPtr[uintptr](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Float32:
+			convertPtr[float32](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Float64:
+			convertPtr[float64](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Complex64:
+			convertPtr[complex64](&fieldsPtr, basePoint, field.offSet)
+		case reflect.Complex128:
+			convertPtr[complex128](&fieldsPtr, basePoint, field.offSet)
+		case reflect.String:
+			convertPtr[string](&fieldsPtr, basePoint, field.offSet)
 		default:
 			fieldsPtr = append(fieldsPtr, nil)
 		}
 	}
 	return fieldsPtr
+}
+
+func convertPtr[T any](fieldsPtr *[]interface{}, basePoint unsafe.Pointer, offset uintptr) {
+	*fieldsPtr = append(*fieldsPtr, (*T)(unsafe.Add(basePoint, offset)))
 }
