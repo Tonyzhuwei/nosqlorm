@@ -1,9 +1,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/Tonyzhuwei/nosqlorm"
 	"github.com/gocql/gocql"
+	"log"
+	"os"
+	"runtime/pprof"
 )
 
 type Person struct {
@@ -51,6 +55,8 @@ var testPerson = Person{
 	Address: "this is a test address",
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+
 func main() {
 	// Create Cassandra connect session.
 	clustser := gocql.NewCluster("localhost:9042")
@@ -62,6 +68,16 @@ func main() {
 
 	// Create tables if not existing
 	nosqlorm.MigrateCassandraTables(sess, Person{})
+
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	app := App{
 		personTable: nosqlorm.NewCqlOrm[Person](sess),
