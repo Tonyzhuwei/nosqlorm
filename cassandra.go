@@ -62,7 +62,7 @@ func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
 }
 
 // Auto create or update table for Cassandra
-func MigrateCassandraTables(sess *gocql.Session, tables ...interface{}) {
+func CreateCassandraTables(sess *gocql.Session, tables ...interface{}) {
 	for _, table := range tables {
 		typ := reflect.TypeOf(table)
 		tableName := strings.ToLower(typ.Name())
@@ -89,12 +89,18 @@ func MigrateCassandraTables(sess *gocql.Session, tables ...interface{}) {
 		pkSql := strings.Join(pkKeys, ", ")
 		if len(pkKeys) > 1 {
 			pkSql = "(" + pkSql + ")"
+		} else if len(pkKeys) == 0 {
+			panic(tableName + " must have at least one Partition Key")
 		}
 		ckSql := strings.Join(ckKeys, ", ")
-		sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s, PRIMARY KEY (%s, %s));", tableName, fieldSql, pkSql, ckSql)
+		if len(ckKeys) > 0 {
+			ckSql = ", " + ckSql
+		}
+		sql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s, PRIMARY KEY (%s%s));", tableName, fieldSql, pkSql, ckSql)
+		println(sql)
 		err := sess.Query(sql).Exec()
 		if err != nil {
-			fmt.Printf("Migrate Cassandra Tables %s failed: %s\n", table, err.Error())
+			fmt.Printf("Migrate Cassandra Tables %s failed: %s\n", tableName, err.Error())
 		}
 		fmt.Printf("Migrate Cassandra table %s success\n", tableName)
 	}

@@ -67,7 +67,7 @@ func main() {
 	}
 
 	// Create tables if not existing
-	nosqlorm.MigrateCassandraTables(sess, Person{})
+	nosqlorm.CreateCassandraTables(sess, Person{})
 
 	flag.Parse()
 	if *cpuprofile != "" {
