@@ -15,11 +15,15 @@ const JSON_TAG = "json"
 
 var modelCache sync.Map
 
-type cassandraTableField struct {
+type tableSchema struct {
+	fields   []string
+	fieldMap map[string]tableField
+}
+
+type tableField struct {
 	isPartitionKey  bool
 	isClusteringKey bool
 	isStatic        bool
-	index           int
 	dataType        reflect.Kind
 	isPointer       bool
 	offSet          uintptr
@@ -41,7 +45,10 @@ func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
 	}
 
 	if _, existing := modelCache.Load(typName); !existing {
-		tableSchema := make(map[string]cassandraTableField, 0)
+		schema := tableSchema{
+			fields:   make([]string, 0),
+			fieldMap: make(map[string]tableField),
+		}
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
 			tag := field.Tag
@@ -51,17 +58,17 @@ func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
 				fieldType = field.Type.Elem().Kind()
 				isPointer = true
 			}
-			tableSchema[field.Name] = cassandraTableField{
+			schema.fields = append(schema.fields, field.Name)
+			schema.fieldMap[field.Name] = tableField{
 				isPartitionKey:  isPartitionKey(tag),
 				isClusteringKey: isClusterKey(tag),
 				isStatic:        isStaticFiled(tag),
-				index:           field.Index[0],
 				dataType:        fieldType,
 				isPointer:       isPointer,
 				offSet:          field.Offset,
 			}
 		}
-		modelCache.Store(typName, tableSchema)
+		modelCache.Store(typName, schema)
 	}
 
 	orm := &cqlOrm[T]{sess: session}
@@ -119,21 +126,21 @@ func (ctx *cqlOrm[T]) Insert(obj T) error {
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
 
-	tableSchema, ok := modelCache.Load(typ.String())
+	schema, ok := modelCache.Load(typ.String())
 	if !ok {
 		return errors.New(fmt.Sprintf("Table %s not found", tableName))
 	}
-	tableFields := tableSchema.(map[string]cassandraTableField)
+	tableFields := schema.(tableSchema).fields
 
 	insertFields := make([]string, 0)
 	fieldPlaceHolders := make([]string, 0)
 	sqlValues := make([]interface{}, 0)
-	for key := range tableFields {
-		fieldVal := convertToNormalValue(val.FieldByName(key))
+	for i := range tableFields {
+		fieldVal := convertToNormalValue(val.Field(i))
 		if fieldVal == nil {
 			continue
 		}
-		insertFields = append(insertFields, key)
+		insertFields = append(insertFields, tableFields[i])
 		fieldPlaceHolders = append(fieldPlaceHolders, "?")
 		sqlValues = append(sqlValues, fieldVal)
 	}
@@ -147,8 +154,8 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
 
-	tableSchema, ok := modelCache.Load(typ.String())
-	tableFields := tableSchema.(map[string]cassandraTableField)
+	schema, ok := modelCache.Load(typ.String())
+	tableFields := schema.(tableSchema).fields
 	if !ok {
 		return []T{}, errors.New(fmt.Sprintf("Table %s not found", tableName))
 	}
@@ -156,12 +163,10 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	selectFields := make([]string, 0)
 	whereClause := make([]string, 0)
 	whereValues := make([]interface{}, 0)
-	// TODO: sort keys by order
 
-	for key, value := range tableFields {
-		fieldName := key
+	for _, fieldName := range tableFields {
 		selectFields = append(selectFields, fieldName)
-		if value.isClusteringKey || value.isPartitionKey {
+		if schema.(tableSchema).fieldMap[fieldName].isClusteringKey || schema.(tableSchema).fieldMap[fieldName].isPartitionKey {
 			fieldVal := convertToNormalValue(val.FieldByName(fieldName))
 			if fieldVal == nil {
 				continue
@@ -182,7 +187,7 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	}()
 	for {
 		var tableObj T
-		if !iter.Scan(getPointersOfStructElements(unsafe.Pointer(&tableObj), selectFields, tableFields)...) {
+		if !iter.Scan(getPointersOfStructElements(unsafe.Pointer(&tableObj), selectFields, schema.(tableSchema).fieldMap)...) {
 			break
 		}
 		selectResult = append(selectResult, tableObj)
@@ -196,26 +201,26 @@ func (ctx *cqlOrm[T]) Update(obj T) error {
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
 
-	tableSchema, ok := modelCache.Load(typ.String())
+	schema, ok := modelCache.Load(typ.String())
 	if !ok {
 		return errors.New(fmt.Sprintf("Table %s not found", tableName))
 	}
-	tableFields := tableSchema.(map[string]cassandraTableField)
+	tableFields := schema.(tableSchema).fields
 
 	fields := make([]string, 0)
 	whereClause := make([]string, 0)
 	sqlValues := make([]interface{}, 0)
 	whereValues := make([]interface{}, 0)
-	for key := range tableFields {
-		fieldVal := convertToNormalValue(val.FieldByName(key))
+	for i, filedName := range tableFields {
+		fieldVal := convertToNormalValue(val.Field(i))
 		if fieldVal == nil {
 			continue
 		}
-		if tableFields[key].isPartitionKey || tableFields[key].isClusteringKey {
-			whereClause = append(whereClause, fmt.Sprintf("%s=?", key))
+		if schema.(tableSchema).fieldMap[filedName].isPartitionKey || schema.(tableSchema).fieldMap[filedName].isClusteringKey {
+			whereClause = append(whereClause, fmt.Sprintf("%s=?", filedName))
 			whereValues = append(whereValues, fieldVal)
 		} else {
-			fields = append(fields, key+"=?")
+			fields = append(fields, filedName+"=?")
 			sqlValues = append(sqlValues, fieldVal)
 		}
 	}
@@ -234,21 +239,20 @@ func (ctx *cqlOrm[T]) Delete(obj T) error {
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
 
-	tableSchema, ok := modelCache.Load(typ.String())
+	schema, ok := modelCache.Load(typ.String())
 	if !ok {
 		return errors.New(fmt.Sprintf("Table %s not found", tableName))
 	}
-	tableFields := tableSchema.(map[string]cassandraTableField)
 
 	whereClause := make([]string, 0)
 	whereValues := make([]interface{}, 0)
-	for key := range tableFields {
-		if tableFields[key].isPartitionKey || tableFields[key].isClusteringKey {
-			fieldVal := convertToNormalValue(val.FieldByName(key))
+	for i, fieldName := range schema.(tableSchema).fields {
+		if schema.(tableSchema).fieldMap[fieldName].isPartitionKey || schema.(tableSchema).fieldMap[fieldName].isClusteringKey {
+			fieldVal := convertToNormalValue(val.Field(i))
 			if fieldVal == nil {
 				continue
 			}
-			whereClause = append(whereClause, fmt.Sprintf("%s=?", key))
+			whereClause = append(whereClause, fmt.Sprintf("%s=?", fieldName))
 			whereValues = append(whereValues, fieldVal)
 		}
 	}
@@ -313,7 +317,7 @@ func isDateFiled(tag reflect.StructTag) bool {
 }
 
 // Get pointers of struct elements for data scanning usage.
-func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string, fieldsMap map[string]cassandraTableField) []interface{} {
+func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string, fieldsMap map[string]tableField) []interface{} {
 	fieldsPtr := make([]interface{}, 0)
 	for _, val := range selectFields {
 		field, _ := fieldsMap[val]
@@ -359,7 +363,7 @@ func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string
 	return fieldsPtr
 }
 
-func appendPtr[T any](fieldsPtr *[]interface{}, basePoint unsafe.Pointer, field cassandraTableField) {
+func appendPtr[T any](fieldsPtr *[]interface{}, basePoint unsafe.Pointer, field tableField) {
 	if field.isPointer {
 		var newVal T
 		ptrAddress := unsafe.Add(basePoint, field.offSet)
