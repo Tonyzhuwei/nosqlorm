@@ -8,7 +8,13 @@ import (
 
 // sql formating
 // Convert from reflect.Value to specific normal type(E.g: Int, string and etc)
-func convertToNormalValue(value reflect.Value) interface{} {
+func convertToNormalValue(val reflect.Value) interface{} {
+	value := val
+	if val.Kind() == reflect.Ptr && !val.IsNil() {
+		value = val.Elem()
+	} else if val.Kind() == reflect.Ptr && val.IsNil() {
+		return nil
+	}
 	switch value.Type().Kind() {
 	case reflect.Bool:
 		return value.Interface().(bool)
@@ -53,6 +59,10 @@ func convertToNormalValue(value reflect.Value) interface{} {
 }
 
 // Fetch field name based on the tag
-func getFiledName(tag reflect.StructTag) string {
+func getFieldName(tag reflect.StructTag) string {
 	return strings.Split(tag.Get(JSON_TAG), ",")[0]
+}
+
+func GetPointer[T any](val T) *T {
+	return &val
 }

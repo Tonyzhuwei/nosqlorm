@@ -11,9 +11,10 @@ import (
 )
 
 type Person struct {
-	Name    string `json:"name" cql:"pk"`
-	Age     int8   `json:"age" cql:"ck"`
-	Address string `json:"address"`
+	Name    string   `json:"name" cql:"pk"`
+	Age     int8     `json:"age" cql:"ck"`
+	Address string   `json:"address"`
+	Income  *float64 `json:"income"`
 }
 
 type App struct {
@@ -53,6 +54,7 @@ var testPerson = Person{
 	Name:    "Tony",
 	Age:     30,
 	Address: "this is a test address",
+	Income:  nosqlorm.GetPointer[float64](10000.10),
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -67,7 +69,10 @@ func main() {
 	}
 
 	// Create tables if not existing
-	nosqlorm.CreateCassandraTables(sess, Person{})
+	err = nosqlorm.CreateCassandraTables(sess, Person{})
+	if err != nil {
+		panic(err)
+	}
 
 	flag.Parse()
 	if *cpuprofile != "" {
