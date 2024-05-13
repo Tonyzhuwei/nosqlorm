@@ -387,10 +387,7 @@ func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string
 
 func appendPtr[T any](fieldsPtr *[]interface{}, basePoint unsafe.Pointer, field tableField) {
 	if field.isPointer {
-		var newVal T
-		ptrAddress := unsafe.Add(basePoint, field.offSet)
-		*(**T)(ptrAddress) = &newVal
-		*fieldsPtr = append(*fieldsPtr, &newVal)
+		*fieldsPtr = append(*fieldsPtr, (**T)(unsafe.Add(basePoint, field.offSet)))
 		return
 	}
 	*fieldsPtr = append(*fieldsPtr, (*T)(unsafe.Add(basePoint, field.offSet)))
