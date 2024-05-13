@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -374,7 +375,9 @@ func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string
 		case reflect.String:
 			appendPtr[string](&fieldsPtr, basePoint, field)
 		case reflect.Slice:
-			fieldsPtr = append(fieldsPtr, (*[]int)(unsafe.Add(basePoint, field.offSet))) // TODO
+			fieldsPtr = append(fieldsPtr, (*[]int)(unsafe.Add(basePoint, field.offSet))) // TODO: to be support more
+		case reflect.Struct:
+			appendPtr[time.Time](&fieldsPtr, basePoint, field) // TODO: to be support more
 		default:
 			fieldsPtr = append(fieldsPtr, nil)
 		}

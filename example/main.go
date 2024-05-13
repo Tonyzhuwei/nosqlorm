@@ -8,14 +8,16 @@ import (
 	"log"
 	"os"
 	"runtime/pprof"
+	"time"
 )
 
 type Person struct {
-	Name        string   `json:"name" cql:"pk"`
-	Age         int8     `json:"age" cql:"ck"`
-	Address     string   `json:"address"`
-	Income      *float64 `json:"income"`
-	LuckyNumber []int    `json:"lucky_number"`
+	Name        string     `json:"name" cql:"pk"`
+	Age         int8       `json:"age" cql:"ck"`
+	Address     string     `json:"address"`
+	Income      *float64   `json:"income"`
+	LuckyNumber []int      `json:"lucky_number"`
+	CreatedTime *time.Time `json:"created_time"`
 }
 
 type App struct {
@@ -57,6 +59,7 @@ var testPerson = Person{
 	Address:     "this is a test address",
 	Income:      nosqlorm.GetPointer[float64](10000.10),
 	LuckyNumber: []int{8, 5},
+	CreatedTime: nosqlorm.GetPointer(time.Now()),
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
