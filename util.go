@@ -53,6 +53,8 @@ func convertToNormalValue(val reflect.Value) interface{} {
 	default:
 		if value.Type().Kind() == reflect.Struct && value.Type().String() == "time.Time" {
 			return value.Interface().(time.Time)
+		} else if value.Type().Kind() == reflect.Slice {
+			return value.Interface().([]int) // TODO: need refined to support multiple types
 		}
 	}
 	return nil

@@ -11,10 +11,11 @@ import (
 )
 
 type Person struct {
-	Name    string   `json:"name" cql:"pk"`
-	Age     int8     `json:"age" cql:"ck"`
-	Address string   `json:"address"`
-	Income  *float64 `json:"income"`
+	Name        string   `json:"name" cql:"pk"`
+	Age         int8     `json:"age" cql:"ck"`
+	Address     string   `json:"address"`
+	Income      *float64 `json:"income"`
+	LuckyNumber []int    `json:"lucky_number"`
 }
 
 type App struct {
@@ -51,10 +52,11 @@ func (app *App) UpdatePerson(person Person) error {
 }
 
 var testPerson = Person{
-	Name:    "Tony",
-	Age:     30,
-	Address: "this is a test address",
-	Income:  nosqlorm.GetPointer[float64](10000.10),
+	Name:        "Tony",
+	Age:         30,
+	Address:     "this is a test address",
+	Income:      nosqlorm.GetPointer[float64](10000.10),
+	LuckyNumber: []int{8, 5},
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")

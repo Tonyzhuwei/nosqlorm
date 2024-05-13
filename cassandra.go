@@ -21,6 +21,7 @@ type tableSchema struct {
 }
 
 type tableField struct {
+	filedName       string
 	isPartitionKey  bool
 	isClusteringKey bool
 	isStatic        bool
@@ -52,14 +53,16 @@ func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
 			tag := field.Tag
+			filedName := getFieldName(tag)
 			fieldType := field.Type.Kind()
 			isPointer := false
 			if field.Type.Kind() == reflect.Ptr {
 				fieldType = field.Type.Elem().Kind()
 				isPointer = true
 			}
-			schema.fields = append(schema.fields, field.Name)
-			schema.fieldMap[field.Name] = tableField{
+			schema.fields = append(schema.fields, filedName)
+			schema.fieldMap[filedName] = tableField{
+				filedName:       filedName,
 				isPartitionKey:  isPartitionKey(tag),
 				isClusteringKey: isClusterKey(tag),
 				isStatic:        isStaticFiled(tag),
@@ -86,7 +89,7 @@ func CreateCassandraTables(sess *gocql.Session, tables ...interface{}) error {
 		for i := 0; i < typ.NumField(); i++ {
 			tag := typ.Field(i).Tag
 			filedName := getFieldName(tag)
-			filedDBType := getFieldDBType(typ.Field(i).Type, tag)
+			filedDBType, _ := getFieldDBType(typ.Field(i).Type.String(), tag)
 			isStatic := ""
 			if isStaticFiled(tag) {
 				isStatic = " static"
@@ -164,10 +167,10 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	whereClause := make([]string, 0)
 	whereValues := make([]interface{}, 0)
 
-	for _, fieldName := range tableFields {
+	for i, fieldName := range tableFields {
 		selectFields = append(selectFields, fieldName)
 		if schema.(tableSchema).fieldMap[fieldName].isClusteringKey || schema.(tableSchema).fieldMap[fieldName].isPartitionKey {
-			fieldVal := convertToNormalValue(val.FieldByName(fieldName))
+			fieldVal := convertToNormalValue(val.Field(i))
 			if fieldVal == nil {
 				continue
 			}
@@ -265,38 +268,52 @@ func (ctx *cqlOrm[T]) Delete(obj T) error {
 }
 
 // Mapping golang type to CS data type
-func getFieldDBType(p reflect.Type, tag reflect.StructTag) string {
-	typeName := p.String()
-	if p.Kind() == reflect.Ptr {
-		typeName = p.Elem().String()
+func getFieldDBType(typeName string, tag reflect.StructTag) (string, error) {
+	if typeName[0:1] == "*" {
+		typeName = typeName[1:]
 	}
+	if typeName[0:2] == "[]" {
+		typeName = typeName[2:]
+		listDateTYpe, _ := getFieldDBType(typeName, tag)
+		return fmt.Sprintf("list<%s>", listDateTYpe), nil
+	}
+	//if typeName[0:3] == "map" {
+	//	re := regexp.MustCompile(`^map\[(.+)\](.+)$`)
+	//	matchedStr := re.FindStringSubmatch(typeName)
+	//	if len(matchedStr) != 3 {
+	//		return "", errors.New(fmt.Sprintf("%s is not a map type", typeName))
+	//	}
+	//	keyType, _ := getFieldDBType(matchedStr[1], tag)
+	//	valType, _ := getFieldDBType(matchedStr[2], tag)
+	//	return fmt.Sprintf("map<%s,%s>", keyType, valType), nil
+	//}
 
 	switch typeName {
 	case "bool":
-		return "boolean"
+		return "boolean", nil
 	case "string":
-		return "text"
+		return "text", nil
 	case "int8":
-		return "tinyint"
+		return "tinyint", nil
 	case "int16":
-		return "smallint"
+		return "smallint", nil
 	case "int32":
-		return "int"
+		return "int", nil
 	case "int":
-		return "bigint"
+		return "bigint", nil
 	case "int64":
-		return "bigint"
+		return "bigint", nil
 	case "float32":
-		return "float"
+		return "float", nil
 	case "float64":
-		return "double"
+		return "double", nil
 	case "time.Time":
 		if isDateFiled(tag) {
-			return "date"
+			return "date", nil
 		}
-		return "timestamp"
+		return "timestamp", nil
 	default:
-		return "Invalid type: " + typeName
+		return "", errors.New("Invalid type: " + typeName)
 	}
 }
 
@@ -356,6 +373,8 @@ func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string
 			appendPtr[complex128](&fieldsPtr, basePoint, field)
 		case reflect.String:
 			appendPtr[string](&fieldsPtr, basePoint, field)
+		case reflect.Slice:
+			fieldsPtr = append(fieldsPtr, (*[]int)(unsafe.Add(basePoint, field.offSet))) // TODO
 		default:
 			fieldsPtr = append(fieldsPtr, nil)
 		}
