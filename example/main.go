@@ -16,7 +16,7 @@ type Person struct {
 	Age         int8       `json:"age" cql:"ck"`
 	Address     string     `json:"address"`
 	Income      *float64   `json:"income"`
-	LuckyNumber []int      `json:"lucky_number"`
+	LuckyNumber []string   `json:"lucky_number"`
 	CreatedTime *time.Time `json:"created_time"`
 }
 
@@ -58,7 +58,7 @@ var testPerson = Person{
 	Age:         30,
 	Address:     "this is a test address",
 	Income:      nosqlorm.GetPointer[float64](10000.10),
-	LuckyNumber: []int{8, 5},
+	LuckyNumber: []string{"abc", "efg"},
 	CreatedTime: nosqlorm.GetPointer(time.Now()),
 }
 
@@ -119,10 +119,10 @@ func main() {
 	result2, _ := app.personTable.Select(Person{Name: "Tony", Age: 30})
 	fmt.Println("Query result after updated: ", result2)
 
-	// Delete
-	//err = app.DeletePerson(testPerson)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//fmt.Println("Delete record: ", testPerson)
+	//Delete
+	err = app.DeletePerson(testPerson)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Delete record: ", testPerson)
 }

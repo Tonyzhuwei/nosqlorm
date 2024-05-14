@@ -29,6 +29,7 @@ type tableField struct {
 	isStatic        bool
 	dataType        reflect.Kind
 	isPointer       bool
+	isList          bool
 	offSet          uintptr
 }
 
@@ -58,13 +59,16 @@ func NewCqlOrm[T interface{}](session *gocql.Session) (*cqlOrm[T], error) {
 			fieldName := getFieldName(tag)
 
 			// Validate whether it is valid type
-			_, isPointer, err := getFieldDBType(field.Type.String(), isDateFiled(tag))
+			dbType, isPointer, err := getFieldDBType(field.Type.String(), isDateFiled(tag))
 			if err != nil {
 				log.Fatal("Invalid field type " + field.Type.String())
 				return nil, err
 			}
 			fieldType := field.Type.Kind()
 			if isPointer {
+				fieldType = field.Type.Elem().Kind()
+			}
+			if strings.HasPrefix(dbType, "list") {
 				fieldType = field.Type.Elem().Kind()
 			}
 
@@ -76,6 +80,7 @@ func NewCqlOrm[T interface{}](session *gocql.Session) (*cqlOrm[T], error) {
 				isStatic:        isStaticFiled(tag),
 				dataType:        fieldType,
 				isPointer:       isPointer,
+				isList:          strings.HasPrefix(dbType, "list"),
 				offSet:          field.Offset,
 			}
 		}
@@ -378,9 +383,9 @@ func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string
 		case reflect.String:
 			appendPtr[string](&fieldsPtr, basePoint, field)
 		case reflect.Slice:
-			fieldsPtr = append(fieldsPtr, (*[]int)(unsafe.Add(basePoint, field.offSet))) // TODO: to be support more
+			appendPtr[string](&fieldsPtr, basePoint, field)
 		case reflect.Struct:
-			appendPtr[time.Time](&fieldsPtr, basePoint, field) // TODO: to be support more
+			appendPtr[time.Time](&fieldsPtr, basePoint, field) // Only allow time.Time struct
 		default:
 			fieldsPtr = append(fieldsPtr, nil)
 		}
@@ -389,6 +394,14 @@ func getPointersOfStructElements(basePoint unsafe.Pointer, selectFields []string
 }
 
 func appendPtr[T any](fieldsPtr *[]interface{}, basePoint unsafe.Pointer, field tableField) {
+	if field.isList {
+		if !field.isPointer {
+			*fieldsPtr = append(*fieldsPtr, (*[]T)(unsafe.Add(basePoint, field.offSet)))
+		} else {
+			*fieldsPtr = append(*fieldsPtr, (**[]T)(unsafe.Add(basePoint, field.offSet)))
+		}
+		return
+	}
 	if field.isPointer {
 		*fieldsPtr = append(*fieldsPtr, (**T)(unsafe.Add(basePoint, field.offSet)))
 		return
