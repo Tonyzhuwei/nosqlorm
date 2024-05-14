@@ -62,7 +62,7 @@ func convertToNormalValue(val reflect.Value) interface{} {
 
 // Fetch field name based on the tag
 func getFieldName(tag reflect.StructTag) string {
-	return strings.Split(tag.Get(JSON_TAG), ",")[0]
+	return strings.Split(tag.Get(jsonTAG), ",")[0]
 }
 
 func GetPointer[T any](val T) *T {

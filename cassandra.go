@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gocql/gocql"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -11,8 +12,8 @@ import (
 	"unsafe"
 )
 
-const CQL_TAG = "cql"
-const JSON_TAG = "json"
+const cqlTAG = "cql"
+const jsonTAG = "json"
 
 var modelCache sync.Map
 
@@ -22,7 +23,7 @@ type tableSchema struct {
 }
 
 type tableField struct {
-	filedName       string
+	fieldName       string
 	isPartitionKey  bool
 	isClusteringKey bool
 	isStatic        bool
@@ -36,7 +37,7 @@ type cqlOrm[T interface{}] struct {
 }
 
 // NewCqlOrm Create a new object to access specific Cassandra table
-func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
+func NewCqlOrm[T interface{}](session *gocql.Session) (*cqlOrm[T], error) {
 	// Cache table schema to memory
 	var t T
 	typ := reflect.TypeOf(t)
@@ -54,16 +55,22 @@ func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
 			tag := field.Tag
-			filedName := getFieldName(tag)
-			fieldType := field.Type.Kind()
-			isPointer := false
-			if field.Type.Kind() == reflect.Ptr {
-				fieldType = field.Type.Elem().Kind()
-				isPointer = true
+			fieldName := getFieldName(tag)
+
+			// Validate whether it is valid type
+			_, isPointer, err := getFieldDBType(field.Type.String(), isDateFiled(tag))
+			if err != nil {
+				log.Fatal("Invalid field type " + field.Type.String())
+				return nil, err
 			}
-			schema.fields = append(schema.fields, filedName)
-			schema.fieldMap[filedName] = tableField{
-				filedName:       filedName,
+			fieldType := field.Type.Kind()
+			if isPointer {
+				fieldType = field.Type.Elem().Kind()
+			}
+
+			schema.fields = append(schema.fields, fieldName)
+			schema.fieldMap[fieldName] = tableField{
+				fieldName:       fieldName,
 				isPartitionKey:  isPartitionKey(tag),
 				isClusteringKey: isClusterKey(tag),
 				isStatic:        isStaticFiled(tag),
@@ -76,7 +83,7 @@ func NewCqlOrm[T interface{}](session *gocql.Session) *cqlOrm[T] {
 	}
 
 	orm := &cqlOrm[T]{sess: session}
-	return orm
+	return orm, nil
 }
 
 // Auto create or update table for Cassandra
@@ -90,7 +97,11 @@ func CreateCassandraTables(sess *gocql.Session, tables ...interface{}) error {
 		for i := 0; i < typ.NumField(); i++ {
 			tag := typ.Field(i).Tag
 			filedName := getFieldName(tag)
-			filedDBType, _ := getFieldDBType(typ.Field(i).Type.String(), tag)
+			filedDBType, _, err := getFieldDBType(typ.Field(i).Type.String(), isDateFiled(tag))
+			if err != nil {
+				return err
+			}
+
 			isStatic := ""
 			if isStaticFiled(tag) {
 				isStatic = " static"
@@ -269,69 +280,61 @@ func (ctx *cqlOrm[T]) Delete(obj T) error {
 }
 
 // Mapping golang type to CS data type
-func getFieldDBType(typeName string, tag reflect.StructTag) (string, error) {
+func getFieldDBType(typeName string, isDate bool) (string, bool, error) {
+	isPointer := false
 	if typeName[0:1] == "*" {
 		typeName = typeName[1:]
+		isPointer = true
 	}
 	if typeName[0:2] == "[]" {
 		typeName = typeName[2:]
-		listDateTYpe, _ := getFieldDBType(typeName, tag)
-		return fmt.Sprintf("list<%s>", listDateTYpe), nil
+		listDateType, _, _ := getFieldDBType(typeName, isDate)
+		return fmt.Sprintf("list<%s>", listDateType), isPointer, nil
 	}
-	//if typeName[0:3] == "map" {
-	//	re := regexp.MustCompile(`^map\[(.+)\](.+)$`)
-	//	matchedStr := re.FindStringSubmatch(typeName)
-	//	if len(matchedStr) != 3 {
-	//		return "", errors.New(fmt.Sprintf("%s is not a map type", typeName))
-	//	}
-	//	keyType, _ := getFieldDBType(matchedStr[1], tag)
-	//	valType, _ := getFieldDBType(matchedStr[2], tag)
-	//	return fmt.Sprintf("map<%s,%s>", keyType, valType), nil
-	//}
 
 	switch typeName {
 	case "bool":
-		return "boolean", nil
+		return "boolean", isPointer, nil
 	case "string":
-		return "text", nil
+		return "text", isPointer, nil
 	case "int8":
-		return "tinyint", nil
+		return "tinyint", isPointer, nil
 	case "int16":
-		return "smallint", nil
+		return "smallint", isPointer, nil
 	case "int32":
-		return "int", nil
+		return "int", isPointer, nil
 	case "int":
-		return "bigint", nil
+		return "bigint", isPointer, nil
 	case "int64":
-		return "bigint", nil
+		return "bigint", isPointer, nil
 	case "float32":
-		return "float", nil
+		return "float", isPointer, nil
 	case "float64":
-		return "double", nil
+		return "double", isPointer, nil
 	case "time.Time":
-		if isDateFiled(tag) {
-			return "date", nil
+		if isDate {
+			return "date", isPointer, nil
 		}
-		return "timestamp", nil
+		return "timestamp", isPointer, nil
 	default:
-		return "", errors.New("Invalid type: " + typeName)
+		return "", isPointer, errors.New("Invalid type: " + typeName)
 	}
 }
 
 func isPartitionKey(tag reflect.StructTag) bool {
-	return strings.Contains(tag.Get(CQL_TAG), "pk")
+	return strings.Contains(tag.Get(cqlTAG), "pk")
 }
 
 func isClusterKey(tag reflect.StructTag) bool {
-	return strings.Contains(tag.Get(CQL_TAG), "ck")
+	return strings.Contains(tag.Get(cqlTAG), "ck")
 }
 
 func isStaticFiled(tag reflect.StructTag) bool {
-	return strings.Contains(tag.Get(CQL_TAG), "static")
+	return strings.Contains(tag.Get(cqlTAG), "static")
 }
 
 func isDateFiled(tag reflect.StructTag) bool {
-	return strings.Contains(tag.Get(CQL_TAG), "date")
+	return strings.Contains(tag.Get(cqlTAG), "date")
 }
 
 // Get pointers of struct elements for data scanning usage.

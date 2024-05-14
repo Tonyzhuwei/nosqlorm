@@ -62,7 +62,7 @@ var testPerson = Person{
 	CreatedTime: nosqlorm.GetPointer(time.Now()),
 }
 
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var cpuprofile = flag.String("cpuprofile", "pprof.profile", "write cpu profile to file")
 
 func main() {
 	// Create Cassandra connect session.
@@ -89,8 +89,13 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
+	tableCtx, err := nosqlorm.NewCqlOrm[Person](sess)
+	if err != nil {
+		panic(err)
+	}
+
 	app := App{
-		personTable: nosqlorm.NewCqlOrm[Person](sess),
+		personTable: tableCtx,
 	}
 
 	// Insert
@@ -115,9 +120,9 @@ func main() {
 	fmt.Println("Query result after updated: ", result2)
 
 	// Delete
-	err = app.DeletePerson(testPerson)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Delete record: ", testPerson)
+	//err = app.DeletePerson(testPerson)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//fmt.Println("Delete record: ", testPerson)
 }
