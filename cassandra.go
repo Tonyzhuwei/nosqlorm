@@ -6,6 +6,7 @@ import (
 	"github.com/gocql/gocql"
 	"log"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -56,7 +57,15 @@ func NewCqlOrm[T interface{}](session *gocql.Session) (*cqlOrm[T], error) {
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
 			tag := field.Tag
+
+			// Validate tag
 			fieldName := getFieldName(tag)
+			if fieldName == "" {
+				return nil, errors.New("invalid CQL Tag: must have a json name")
+			}
+			if !isValidCqlTag(tag) {
+				return nil, errors.New(fmt.Sprintf("Invalid CQL Tag for filed %s: %s", fieldName, tag.Get(cqlTAG)))
+			}
 
 			// Validate whether it is valid type
 			dbType, isPointer, err := getFieldDBType(field.Type.String(), isDateFiled(tag))
@@ -102,6 +111,9 @@ func CreateCassandraTables(sess *gocql.Session, tables ...interface{}) error {
 		for i := 0; i < typ.NumField(); i++ {
 			tag := typ.Field(i).Tag
 			filedName := getFieldName(tag)
+			if filedName == "-" {
+				continue
+			}
 			filedDBType, _, err := getFieldDBType(typ.Field(i).Type.String(), isDateFiled(tag))
 			if err != nil {
 				return err
@@ -156,6 +168,9 @@ func (ctx *cqlOrm[T]) Insert(obj T) error {
 	fieldPlaceHolders := make([]string, 0)
 	sqlValues := make([]interface{}, 0)
 	for i := range tableFields {
+		if tableFields[i] == "-" {
+			continue
+		}
 		fieldVal := convertToNormalValue(val.Field(i))
 		if fieldVal == nil {
 			continue
@@ -185,6 +200,9 @@ func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	whereValues := make([]interface{}, 0)
 
 	for i, fieldName := range tableFields {
+		if fieldName == "-" {
+			continue
+		}
 		selectFields = append(selectFields, fieldName)
 		if schema.(tableSchema).fieldMap[fieldName].isClusteringKey || schema.(tableSchema).fieldMap[fieldName].isPartitionKey {
 			fieldVal := convertToNormalValue(val.Field(i))
@@ -232,6 +250,9 @@ func (ctx *cqlOrm[T]) Update(obj T) error {
 	sqlValues := make([]interface{}, 0)
 	whereValues := make([]interface{}, 0)
 	for i, filedName := range tableFields {
+		if filedName == "-" {
+			continue
+		}
 		fieldVal := convertToNormalValue(val.Field(i))
 		if fieldVal == nil {
 			continue
@@ -267,6 +288,9 @@ func (ctx *cqlOrm[T]) Delete(obj T) error {
 	whereClause := make([]string, 0)
 	whereValues := make([]interface{}, 0)
 	for i, fieldName := range schema.(tableSchema).fields {
+		if fieldName == "-" {
+			continue
+		}
 		if schema.(tableSchema).fieldMap[fieldName].isPartitionKey || schema.(tableSchema).fieldMap[fieldName].isClusteringKey {
 			fieldVal := convertToNormalValue(val.Field(i))
 			if fieldVal == nil {
@@ -324,6 +348,39 @@ func getFieldDBType(typeName string, isDate bool) (string, bool, error) {
 	default:
 		return "", isPointer, errors.New("Invalid type: " + typeName)
 	}
+}
+
+func isValidCqlTag(tag reflect.StructTag) bool {
+	fieldName := tag.Get(jsonTAG)
+	tagStr := tag.Get(cqlTAG)
+
+	if fieldName == "-" && tagStr != "" {
+		log.Fatal("Json ignored field should not contain CQL tag: ", tagStr)
+		return false
+	}
+
+	if tagStr != "" {
+		keys := strings.Split(tagStr, ",")
+		allowKeys := []string{"pk", "ck", "static", "date"}
+		for _, key := range keys {
+			if !slices.Contains(allowKeys, key) {
+				log.Fatal(fmt.Sprintf("Invalid tag: %s, key word %s is not allowed", tagStr, key))
+				return false
+			}
+		}
+		isPk := isPartitionKey(tag)
+		isCk := isClusterKey(tag)
+		isStatic := isStaticFiled(tag)
+		if isPk && isCk {
+			log.Fatal(fmt.Sprintf("Invalid tag: %s, a field could not be both clustering key and partition key", tagStr))
+			return false
+		}
+		if (isPk || isCk) && isStatic {
+			log.Fatal(fmt.Sprintf("Invalid tag: %s, static field could not be part of primary key", tagStr))
+			return false
+		}
+	}
+	return true
 }
 
 func isPartitionKey(tag reflect.StructTag) bool {

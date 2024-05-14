@@ -15,7 +15,7 @@ type Person struct {
 	Name        string     `json:"name" cql:"pk"`
 	Age         int8       `json:"age" cql:"ck"`
 	Address     string     `json:"address"`
-	Income      *float64   `json:"income"`
+	Income      *float64   `json:"-"`
 	LuckyNumber []string   `json:"lucky_number"`
 	CreatedTime *time.Time `json:"created_time"`
 }
