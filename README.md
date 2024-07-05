@@ -24,12 +24,33 @@ if err != nil {
 }
 
 // Create tables if not existing
-nosqlorm.MigrateCassandraTables(sess, Person{})
+err = nosqlorm.CreateCassandraTables(sess, Person{})
+if err != nil {
+    panic(err)
+}
 ```
 ## CRUD
 ```
 personCtx := nosqlorm.NewCqlOrm[Person](sess)
+// Create
+result, err := personCtx.Insert(Person{
+    Name: "tony",
+    Age:  30,
+    Address: "Current Address"
+})
+// Query
 result, err := personCtx.Select(Person{
+    Name: "tony",
+    Age:  30,
+})
+// Update
+result, err := personCtx.Update(Person{
+    Name: "tony",
+    Age:  30,
+    Address: "New Address"
+})
+// Delete
+result, err := personCtx.Delete(Person{
     Name: "tony",
     Age:  30,
 })
@@ -52,10 +73,7 @@ mockPersonTable.Select(testPerson)
 
 
 # Missing Parts:
-- Enhance performance through cache utilization.
 - Facilitate transactions across multiple tables simultaneously.
-- Enhance mock functionality to include 'ignore' and other features.
-- Optimize data scanning processes.
 - Implement comprehensive unit test cases.
 - Enable batch methods and corresponding mock support.
 - Incorporate logging capabilities, record low-performance CQL queries.
