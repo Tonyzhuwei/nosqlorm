@@ -34,12 +34,12 @@ type tableField struct {
 	offSet          uintptr
 }
 
-type CqlOrm[T interface{}] struct {
+type cqlOrm[T interface{}] struct {
 	sess *gocql.Session
 }
 
 // NewCqlOrm Create a new object to access specific Cassandra table
-func NewCqlOrm[T interface{}](session *gocql.Session) (*CqlOrm[T], error) {
+func NewCqlOrm[T interface{}](session *gocql.Session) (*cqlOrm[T], error) {
 	// Cache table schema to memory
 	var t T
 	typ := reflect.TypeOf(t)
@@ -96,7 +96,7 @@ func NewCqlOrm[T interface{}](session *gocql.Session) (*CqlOrm[T], error) {
 		modelCache.Store(typName, schema)
 	}
 
-	orm := &CqlOrm[T]{sess: session}
+	orm := &cqlOrm[T]{sess: session}
 	return orm, nil
 }
 
@@ -153,7 +153,7 @@ func CreateCassandraTables(sess *gocql.Session, tables ...interface{}) error {
 	return nil
 }
 
-func (ctx *CqlOrm[T]) Insert(obj T) error {
+func (ctx *cqlOrm[T]) Insert(obj T) error {
 	val := reflect.ValueOf(obj)
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
@@ -184,7 +184,7 @@ func (ctx *CqlOrm[T]) Insert(obj T) error {
 	return ctx.sess.Query(sql, sqlValues...).Exec()
 }
 
-func (ctx *CqlOrm[T]) Select(obj T) ([]T, error) {
+func (ctx *cqlOrm[T]) Select(obj T) ([]T, error) {
 	val := reflect.ValueOf(obj)
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
@@ -234,7 +234,7 @@ func (ctx *CqlOrm[T]) Select(obj T) ([]T, error) {
 	return selectResult, nil
 }
 
-func (ctx *CqlOrm[T]) Update(obj T) error {
+func (ctx *cqlOrm[T]) Update(obj T) error {
 	val := reflect.ValueOf(obj)
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
@@ -275,7 +275,7 @@ func (ctx *CqlOrm[T]) Update(obj T) error {
 	return ctx.sess.Query(sql, sqlParams...).Exec()
 }
 
-func (ctx *CqlOrm[T]) Delete(obj T) error {
+func (ctx *cqlOrm[T]) Delete(obj T) error {
 	val := reflect.ValueOf(obj)
 	typ := val.Type()
 	tableName := strings.ToLower(typ.Name())
